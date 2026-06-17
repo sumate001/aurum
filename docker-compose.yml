@@ -1,0 +1,193 @@
+name: aurum
+
+networks:
+  aurum_net:
+    driver: bridge
+
+volumes:
+  aurum_postgres:
+  aurum_qdrant:
+  aurum_redis:
+
+services:
+  # ─── Infrastructure ────────────────────────────────────────────────────────
+  aurum-postgres:
+    image: postgres:16
+    container_name: aurum-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - aurum_postgres:/var/lib/postgresql/data
+      - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "13005:5432"
+    networks:
+      - aurum_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  aurum-redis:
+    image: redis:7-alpine
+    container_name: aurum-redis
+    restart: unless-stopped
+    volumes:
+      - aurum_redis:/data
+    ports:
+      - "13006:6379"
+    networks:
+      - aurum_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  aurum-qdrant:
+    image: qdrant/qdrant:latest
+    container_name: aurum-qdrant
+    restart: unless-stopped
+    volumes:
+      - aurum_qdrant:/qdrant/storage
+    ports:
+      - "13003:6333"
+      - "13004:6334"
+    networks:
+      - aurum_net
+
+  # ─── Custom Services ────────────────────────────────────────────────────────
+  aurum-ff-scraper:
+    build:
+      context: ./services/ff-scraper
+      dockerfile: Dockerfile
+    container_name: aurum-ff-scraper
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "13000:5000"
+    networks:
+      - aurum_net
+    depends_on:
+      aurum-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  aurum-mirofish:
+    build:
+      context: ./services/mirofish
+      dockerfile: Dockerfile
+    container_name: aurum-mirofish
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "13001:8000"
+    networks:
+      - aurum_net
+    depends_on:
+      aurum-postgres:
+        condition: service_healthy
+      aurum-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  aurum-signal:
+    build:
+      context: ./services/signal
+      dockerfile: Dockerfile
+    container_name: aurum-signal
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "13007:8000"
+    networks:
+      - aurum_net
+    depends_on:
+      aurum-postgres:
+        condition: service_healthy
+      aurum-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  aurum-gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: aurum-gateway
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "13008:8000"
+    networks:
+      - aurum_net
+    depends_on:
+      aurum-postgres:
+        condition: service_healthy
+      aurum-redis:
+        condition: service_healthy
+      aurum-signal:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  aurum-collector:
+    build:
+      context: ./services/collector
+      dockerfile: Dockerfile
+    container_name: aurum-collector
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - aurum_net
+    depends_on:
+      aurum-postgres:
+        condition: service_healthy
+      aurum-redis:
+        condition: service_healthy
+      aurum-ff-scraper:
+        condition: service_healthy
+      aurum-mirofish:
+        condition: service_healthy
+      aurum-signal:
+        condition: service_healthy
+
+  aurum-dashboard:
+    build:
+      context: ./services/dashboard
+      dockerfile: Dockerfile
+    container_name: aurum-dashboard
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NEXT_PUBLIC_GATEWAY_URL=http://localhost:13008
+    ports:
+      - "13009:3000"
+    networks:
+      - aurum_net
+    depends_on:
+      aurum-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/node", "-e", "require('http').get({host:'0.0.0.0',port:3000,path:'/api/health'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
