@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import useSWR from "swr";
 import dynamic from "next/dynamic";
 import { computeOutcomes, type OhlcvPoint, type Signal, type SignalOutcome, type TrendCheck } from "@/components/PriceChart";
+import ThinkingPanel from "@/components/ThinkingPanel";
 
 const PriceChart = dynamic(() => import("@/components/PriceChart"), { ssr: false });
 
@@ -92,7 +93,7 @@ export default function Home() {
   const secUntilAnalysisCycle = ANALYSIS_CYCLE_SEC - (nowSec % ANALYSIS_CYCLE_SEC);
   void tick; // consumed via nowSec inside render
 
-  const ohlcv: OhlcvPoint[] = ohlcvRes?.data ?? [];
+  const ohlcv: OhlcvPoint[] = (ohlcvRes?.data ?? []).slice(-60);
   const trend = trendRaw ?? { direction: "UNKNOWN", action: "HOLD", reason: "no_data" };
 
   const outcomes: SignalOutcome[] = ohlcv.length > 0 ? computeOutcomes(signals, ohlcv) : [];
@@ -119,7 +120,7 @@ export default function Home() {
     <div className="flex flex-col h-full w-full select-none">
 
       {/* ── HEADER ──────────────────────────────────────────────────── */}
-      <header className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-800 bg-[#0d1525] shrink-0 flex-wrap">
+      <header className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-800 bg-[#0d1525] shrink-0 flex-wrap">
         <span className="text-yellow-400 font-bold text-lg tracking-wide">AURUM</span>
 
         {currentPrice && (
@@ -160,30 +161,22 @@ export default function Home() {
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-3">
-          {/* Live status + countdown */}
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 text-[11px]">
-            {/* Pulse dot */}
-            <span className="relative flex h-2 w-2">
-              <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping ${isFetching ? "bg-yellow-400" : "bg-green-500"}`} />
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${isFetching ? "bg-yellow-400" : "bg-green-500"}`} />
-            </span>
+        <div className="ml-auto flex items-center gap-2">
+          {/* Live pulse (always visible) */}
+          <span className="relative flex h-2 w-2">
+            <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping ${isFetching ? "bg-yellow-400" : "bg-green-500"}`} />
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${isFetching ? "bg-yellow-400" : "bg-green-500"}`} />
+          </span>
 
-            <span className="text-gray-500">
-              {isFetching ? "กำลังดึงข้อมูล…" : "Live"}
-            </span>
-
+          {/* Countdown timers — hidden on small screens */}
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 text-[11px]">
+            <span className="text-gray-500">{isFetching ? "กำลังดึงข้อมูล…" : "Live"}</span>
             <span className="text-gray-700">|</span>
-
-            {/* Data refresh countdown */}
             <span className="text-gray-500">ข้อมูล</span>
             <span className={`font-mono font-bold tabular-nums ${secUntilDataRefresh <= 3 ? "text-yellow-400" : "text-gray-300"}`}>
               0:{String(secUntilDataRefresh).padStart(2, "0")}
             </span>
-
             <span className="text-gray-700">|</span>
-
-            {/* Analysis cycle countdown */}
             <span className="text-gray-500">วิเคราะห์</span>
             <span className={`font-mono font-bold tabular-nums ${secUntilAnalysisCycle <= 30 ? "text-yellow-400" : "text-gray-300"}`}>
               {fmtCountdown(secUntilAnalysisCycle)}
@@ -194,7 +187,7 @@ export default function Home() {
           <div className="flex bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
             {TF_OPTIONS.map((t) => (
               <button key={t} onClick={() => setTf(t)}
-                className={`px-3 py-1 text-xs font-medium transition-colors ${tf === t ? "bg-yellow-500/20 text-yellow-400" : "text-gray-500 hover:text-gray-300"}`}>
+                className={`px-2.5 py-1 text-xs font-medium transition-colors ${tf === t ? "bg-yellow-500/20 text-yellow-400" : "text-gray-500 hover:text-gray-300"}`}>
                 {t}
               </button>
             ))}
@@ -203,11 +196,11 @@ export default function Home() {
       </header>
 
       {/* ── BODY ────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden">
 
         {/* CHART */}
-        <main className="flex-1 min-w-0 flex flex-col border-r border-gray-800">
-          <div className="flex items-center gap-4 px-4 pt-2.5 pb-1 shrink-0 flex-wrap text-[11px]">
+        <main className="h-[45%] md:h-auto md:flex-1 shrink-0 min-w-0 flex flex-col border-b md:border-b-0 md:border-r border-gray-800">
+          <div className="flex items-center gap-3 px-4 pt-2.5 pb-1 shrink-0 flex-wrap text-[11px]">
             <span className="text-gray-600 font-medium uppercase tracking-wider">GOLD# {tf} · Price vs Signal</span>
             <span className="flex items-center gap-1.5 text-gray-500"><span className="w-3 h-0.5 bg-yellow-500 inline-block rounded" /> Close</span>
             <span className="flex items-center gap-1.5 text-green-400"><span className="w-3 h-3 rounded-sm inline-block bg-green-500/20 border border-green-600/40" /> TP zone</span>
@@ -221,7 +214,7 @@ export default function Home() {
         </main>
 
         {/* RIGHT SIDEBAR */}
-        <aside className="w-72 shrink-0 flex flex-col overflow-y-auto bg-[#0d1525]">
+        <aside className="flex-1 md:flex-none md:w-72 shrink-0 flex flex-col overflow-y-auto bg-[#0d1525]">
 
           {/* ── TREND STATUS PANEL ── key info ── */}
           <div className={`px-4 py-3 border-b ${isNewSignal ? "border-yellow-700/50 bg-yellow-500/5" : "border-gray-800"}`}>
@@ -393,17 +386,20 @@ export default function Home() {
         </aside>
       </div>
 
+      {/* ── AI THINKING ─────────────────────────────────────────── */}
+      <ThinkingPanel signal={signals[0]} />
+
       {/* ── SIGNAL HISTORY (only real signals, not every cycle) ──── */}
-      <div className="shrink-0 border-t border-gray-800 bg-[#0d1525]">
+      <div className="shrink-0 border-t border-gray-800 bg-[#0d1525] max-h-[28%] md:max-h-none flex flex-col">
         <div className="px-4 py-2 flex items-center gap-3 border-b border-gray-800/50">
           <span className="text-[10px] text-gray-600 uppercase tracking-widest">Signal History</span>
-          <span className="text-[10px] text-gray-700">
+          <span className="hidden sm:inline text-[10px] text-gray-700">
             {signals.length} signals (เฉพาะเมื่อทิศทางเปลี่ยน / pullback / reconfirm 4h)
           </span>
         </div>
         <div
-          className="flex gap-3 overflow-x-auto px-4 py-3"
-          style={{ scrollbarWidth: "thin", scrollbarColor: "#374151 transparent" }}
+          className="flex gap-3 overflow-x-auto px-4 py-3 touch-pan-x flex-1 min-h-0"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "#374151 transparent", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
         >
           {outcomes.length === 0 ? (
             <p className="text-xs text-gray-600 py-1">ยังไม่มี signal — รอวิเคราะห์รอบหน้า…</p>
@@ -413,7 +409,7 @@ export default function Home() {
               const border = o.action === "BUY" ? "border-green-800" : "border-red-800";
               return (
                 <button key={o.id} onClick={() => setActiveId(isActive ? null : o.id)}
-                  className={`shrink-0 rounded-xl border p-3 text-left text-xs transition-all min-w-[175px] ${border}
+                  className={`shrink-0 rounded-xl border p-3 text-left text-xs transition-all min-w-[160px] active:scale-95 ${border}
                     ${isActive ? "bg-gray-800 ring-1 ring-yellow-500/50" : "bg-[#111827] hover:bg-gray-800/50"}`}
                 >
                   <div className="flex items-center justify-between mb-1.5">

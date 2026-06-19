@@ -4,4 +4,13 @@
 
 body {
   @apply bg-gray-950 text-gray-100;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Mobile chart min-height ───────────────────────────────── */
+@media (max-width: 767px) {
+  .recharts-wrapper,
+  .recharts-surface {
+    touch-action: pan-y;
+  }
 }

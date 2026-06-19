@@ -23,12 +23,8 @@ class VolatilityAgent(BaseIndicatorAgent):
         avg_price = float(close.mean())
         atr_pct = atr / avg_price * 100
 
-        if atr_pct > 1.5:
-            sig = "HOLD"
-        elif atr_pct < 0.3:
-            sig = "HOLD"
-        else:
-            sig = "BUY"  # normal volatility is favorable
+        # ATR carries no directional information; always neutral
+        sig = "HOLD"
 
         return AgentSignal(
             agent_name=self.name,

@@ -4,9 +4,11 @@ from datetime import datetime, timezone
 FEEDS = [
     "https://feeds.reuters.com/reuters/businessNews",
     "https://www.fxstreet.com/rss/news",
+    "https://www.kitco.com/rss/Lo-gold-news.rss",
+    "https://news.kitco.com/rss/",
 ]
 
-GOLD_KEYWORDS = ["gold", "xau", "precious metal", "bullion", "fed", "dollar", "inflation"]
+GOLD_KEYWORDS = ["gold", "xau", "precious metal", "bullion", "fed", "dollar", "inflation", "comex", "spot gold", "kitco"]
 
 
 def fetch_news() -> list[dict]:

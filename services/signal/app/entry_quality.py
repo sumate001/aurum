@@ -59,26 +59,37 @@ def check_entry_quality(ohlcv_dict: dict, direction: str) -> dict:
     details: list[str] = []
     entry_zone: float | None = None
 
-    # ── 1. H4: big-picture trend alignment (max +2) ────────────────────────
+    # ── 1. H4: big-picture trend alignment OR reversal extreme (max +2) ───
     h4_df = _to_df(ohlcv_dict.get("H4", []))
-    h4_aligned = False
+    h4_aligned  = False
+    is_reversal = False
 
     if h4_df is not None:
         close_h4 = h4_df["close"]
         ema20_h4 = float(close_h4.ewm(span=20).mean().iloc[-1])
         ema50_h4 = float(close_h4.ewm(span=50).mean().iloc[-1])
         last_h4  = float(close_h4.iloc[-1])
+        rsi_h4   = float(_rsi(close_h4).iloc[-1])
 
         if direction == "BULLISH":
-            h4_aligned = last_h4 > ema20_h4 and ema20_h4 >= ema50_h4 * 0.9995
+            h4_aligned  = last_h4 > ema20_h4 and ema20_h4 >= ema50_h4 * 0.9995
+            # Reversal: ราคาลงต่ำกว่า EMA20 + RSI oversold → buy the dip
+            is_reversal = rsi_h4 < 30 and last_h4 < ema20_h4 * 0.997
         else:
-            h4_aligned = last_h4 < ema20_h4 and ema20_h4 <= ema50_h4 * 1.0005
+            h4_aligned  = last_h4 < ema20_h4 and ema20_h4 <= ema50_h4 * 1.0005
+            # Reversal: ราคาสูงกว่า EMA20 + RSI overbought → sell the spike
+            is_reversal = rsi_h4 > 70 and last_h4 > ema20_h4 * 1.003
 
         if h4_aligned:
             score += 2
             details.append(f"H4 trend {direction.lower()} (EMA stack ยืนยัน)")
+        elif is_reversal:
+            h4_aligned = True
+            score += 2
+            label = "overbought" if direction == "BEARISH" else "oversold"
+            details.append(f"H4 reversal zone — RSI {rsi_h4:.0f} ({label}), ราคา overextended จาก EMA20")
         else:
-            details.append(f"H4 trend ไม่ตรงกับ {direction} — ยังไม่ align")
+            details.append(f"H4 trend ไม่ตรงกับ {direction} — ยังไม่ align (RSI {rsi_h4:.0f})")
     else:
         # ไม่มี H4 data → ใช้ macro confidence เป็น proxy
         score += 1
@@ -138,38 +149,40 @@ def check_entry_quality(ohlcv_dict: dict, direction: str) -> dict:
     else:
         details.append("ไม่มีข้อมูล H1")
 
-    # ── 3. M15: trigger confirmation (max +1) ─────────────────────────────
-    m15_df = _to_df(ohlcv_dict.get("M15", []))
+    # ── 3. M30 (primary) / M15 (fallback): trigger confirmation (max +1) ───
+    # M30 clean กว่า M15 — ใช้ M30 ก่อน ถ้าไม่มีค่อย fallback M15
+    trigger_df   = _to_df(ohlcv_dict.get("M30", [])) or _to_df(ohlcv_dict.get("M15", []))
+    trigger_label = "M30" if _to_df(ohlcv_dict.get("M30", [])) is not None else "M15"
     m15_confirmed = False
 
-    if m15_df is not None:
-        close_m15 = m15_df["close"]
-        rsi_m15_s = _rsi(close_m15)
-        rsi_m15   = float(rsi_m15_s.iloc[-1])
-        rsi_prev  = float(rsi_m15_s.iloc[-2]) if len(rsi_m15_s) >= 2 else rsi_m15
+    if trigger_df is not None:
+        close_t   = trigger_df["close"]
+        rsi_t_s   = _rsi(close_t)
+        rsi_t     = float(rsi_t_s.iloc[-1])
+        rsi_prev  = float(rsi_t_s.iloc[-2]) if len(rsi_t_s) >= 2 else rsi_t
 
-        if direction == "BULLISH" and rsi_m15 > 45 and rsi_m15 >= rsi_prev:
+        if direction == "BULLISH" and rsi_t > 45 and rsi_t >= rsi_prev:
             m15_confirmed = True
             score += 1
-            details.append(f"M15 RSI {rsi_m15:.0f} กลับขึ้น — momentum ยืนยัน")
-        elif direction == "BEARISH" and rsi_m15 < 55 and rsi_m15 <= rsi_prev:
+            details.append(f"{trigger_label} RSI {rsi_t:.0f} กลับขึ้น — momentum ยืนยัน")
+        elif direction == "BEARISH" and rsi_t < 55 and rsi_t <= rsi_prev:
             m15_confirmed = True
             score += 1
-            details.append(f"M15 RSI {rsi_m15:.0f} กลับลง — momentum ยืนยัน")
+            details.append(f"{trigger_label} RSI {rsi_t:.0f} กลับลง — momentum ยืนยัน")
         else:
-            details.append(f"M15 RSI {rsi_m15:.0f} ยังไม่ยืนยันทิศทาง")
+            details.append(f"{trigger_label} RSI {rsi_t:.0f} ยังไม่ยืนยันทิศทาง")
     else:
         details.append("ไม่มีข้อมูล M15")
 
     # ── Setup type label ───────────────────────────────────────────────────
     if h4_aligned and near_level and m15_confirmed:
-        setup_type = "EMA Pullback + M15 Confirm"          # best
+        setup_type = "Reversal + M15 Confirm" if is_reversal else "EMA Pullback + M15 Confirm"
     elif h4_aligned and near_level and not m15_confirmed:
-        setup_type = "Pullback Zone (รอ M15 ยืนยัน)"
+        setup_type = "Reversal Zone (รอ M15 ยืนยัน)" if is_reversal else "Pullback Zone (รอ M15 ยืนยัน)"
     elif h4_aligned and not_overextended and m15_confirmed:
         setup_type = "Trend Continuation"
     elif h4_aligned and not near_level:
-        setup_type = "รอ Pullback ก่อนเข้า"
+        setup_type = "Reversal (H4 Extreme)" if is_reversal else "รอ Pullback ก่อนเข้า"
     elif not h4_aligned:
         setup_type = "H4 ขัดแย้ง — ไม่เข้า"
     else:
@@ -190,6 +203,7 @@ def check_entry_quality(ohlcv_dict: dict, direction: str) -> dict:
         "details": details,
         "entry_zone": entry_zone,
         "h4_aligned": h4_aligned,
+        "is_reversal": is_reversal,
         "near_level": near_level,
         "m15_confirmed": m15_confirmed,
     }

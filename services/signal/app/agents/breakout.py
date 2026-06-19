@@ -19,10 +19,13 @@ class BreakoutAgent(BaseIndicatorAgent):
         last_upper = float(upper.iloc[-1])
         last_lower = float(lower.iloc[-1])
         mid = (last_upper + last_lower) / 2
+        channel_range = last_upper - last_lower if last_upper > last_lower else 1.0
 
-        if last_close >= last_upper:
+        # Fire when price is in the top/bottom 15% of the Donchian channel
+        position = (last_close - last_lower) / channel_range
+        if position >= 0.85:
             sig = "BUY"
-        elif last_close <= last_lower:
+        elif position <= 0.15:
             sig = "SELL"
         else:
             sig = "HOLD"

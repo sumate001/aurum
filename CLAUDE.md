@@ -582,3 +582,20 @@ curl -X POST http://localhost:13008/simulate
 - ทุก FastAPI service ต้องมี `/health` และ `/docs` (Swagger)
 - Error handling: ถ้า source ใด source หนึ่งพัง ให้ log แล้ว continue ไม่ใช่ crash
 - ใช้ structured logging (JSON format) ทุก service
+
+
+## ADHD Integration Plan
+
+ใช้ adhd-agent library สำหรับ divergent hypothesis generation
+ก่อน MiroFish simulation vote ทุก session
+
+### Architecture
+- Hypothesis generator: แทรกก่อน MiroFish
+- Drawdown debugger: trigger เมื่อ loss streak >= 3
+- Model: qwen3.6:35b-a3b (same model, no reload)
+- Mode: sequential (ไม่ parallel เพราะ VRAM จำกัด)
+- Timing: pre-session, ไม่ real-time
+
+### Key files to create
+- src/hypothesis-generator.ts
+- src/drawdown-debugger.ts

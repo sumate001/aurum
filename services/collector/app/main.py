@@ -12,6 +12,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from .seed_builder import build_seed_document
 from .sources.calendar import fetch_calendar_events
 from .sources.price import fetch_ohlcv
+from .drawdown_debugger import analyze_drawdown
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -21,15 +22,18 @@ MIROFISH_URL         = os.getenv("MIROFISH_URL", "http://aurum-mirofish:8000")
 SIGNAL_URL           = os.getenv("SIGNAL_URL", "http://aurum-signal:8000")
 GATEWAY_URL          = os.getenv("GATEWAY_URL", "http://aurum-gateway:8000")
 SIMULATION_ROUNDS    = int(os.getenv("MIROFISH_SIMULATION_ROUNDS", 30))
-CONFIDENCE_THRESHOLD = int(os.getenv("SIGNAL_CONFIDENCE_THRESHOLD", 60))
-RECONFIRM_HOURS      = int(os.getenv("SIGNAL_RECONFIRM_HOURS", 4))
-CONF_SURGE_THRESHOLD = int(os.getenv("SIGNAL_CONF_SURGE", 15))
-MAX_DAILY_SIGNALS    = int(os.getenv("SIGNAL_MAX_DAILY", 3))
+CONFIDENCE_THRESHOLD      = int(os.getenv("SIGNAL_CONFIDENCE_THRESHOLD", 60))
+RECONFIRM_HOURS           = int(os.getenv("SIGNAL_RECONFIRM_HOURS", 4))
+CONF_SURGE_THRESHOLD      = int(os.getenv("SIGNAL_CONF_SURGE", 15))
+MAX_DAILY_SIGNALS         = int(os.getenv("SIGNAL_MAX_DAILY", 3))
+OFF_SESSION_CONF_OVERRIDE = int(os.getenv("SIGNAL_OFF_SESSION_CONFIDENCE", 78))
 
 # Trading sessions in UTC (hour_start inclusive, hour_end exclusive)
+# Asian:  01:00–07:00 UTC  =  08:00–14:00 Bangkok
 # London: 07:00–12:00 UTC  =  14:00–19:00 Bangkok
 # NY:     13:00–18:00 UTC  =  20:00–01:00 Bangkok
 SESSIONS_UTC = {
+    "asian":  (1, 7),
     "london": (7, 12),
     "ny":     (13, 18),
 }
@@ -158,9 +162,10 @@ def _should_send_signal(new_sig: dict, last_sig: dict | None,
                         session: str | None, daily_count: int) -> tuple[bool, str]:
     """Return (should_send, reason)"""
 
-    # Gate 1: session filter
+    # Gate 1: session filter (high-confidence signals can bypass off-hours)
     if session is None:
-        return False, "off_session"
+        if new_sig.get("confidence", 0) < OFF_SESSION_CONF_OVERRIDE:
+            return False, "off_session"
 
     # Gate 2: daily limit
     if daily_count >= MAX_DAILY_SIGNALS:
@@ -306,11 +311,40 @@ def run_cycle():
             log.info("No signal sent reason=%s action=%s session=%s daily=%d/%d",
                      reason, signal.get("action"), session or "off", daily_count, MAX_DAILY_SIGNALS)
 
+        # ── ADHD Drawdown check ────────────────────────────────────────────
+        _check_drawdown(conn, r)
+
     except Exception as e:
         log.error("Cycle failed: %s", e, exc_info=True)
     finally:
         if conn:
             conn.close()
+
+
+def _check_drawdown(conn, r: redis_lib.Redis):
+    """Run ADHD drawdown analysis and cache result in Redis if streak triggered."""
+    try:
+        result = analyze_drawdown(conn)
+        if result is None:
+            return
+        r.setex("aurum:drawdown_alert", 86400, json.dumps(result, default=str))
+        pause_h = result.get("suggested_pause_hours", 0)
+        if pause_h and pause_h > 0:
+            log.warning(
+                "Drawdown debugger suggests pausing %dh — "
+                "root_cause=%r severity=%s (manual review required)",
+                pause_h, result.get("root_cause"), result.get("severity"),
+            )
+        try:
+            httpx.post(
+                f"{GATEWAY_URL}/drawdown-alert",
+                json=result,
+                timeout=10,
+            )
+        except Exception:
+            pass  # gateway endpoint is optional; log already captured the alert
+    except Exception as e:
+        log.warning("Drawdown check error (non-fatal): %s", e)
 
 
 def _log_history(r: redis_lib.Redis, now_iso: str, macro: dict, signal: dict,

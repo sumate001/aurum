@@ -20,7 +20,7 @@ class VolumeAgent(BaseIndicatorAgent):
         avg_vol = float(volume.rolling(20).mean().iloc[-1])
         last_vol = float(volume.iloc[-1])
 
-        vol_surge = last_vol > avg_vol * 1.5
+        vol_surge = last_vol > avg_vol * 1.2
 
         if last_close > last_vwap and vol_surge:
             sig = "BUY"

@@ -17,9 +17,10 @@ class TrendAgent(BaseIndicatorAgent):
         last_50 = float(ema50.iloc[-1])
         last_200 = float(ema200.iloc[-1])
 
-        if last_20 > last_50 > last_200 and last_close > last_20:
+        # EMA20/50 stack is the primary signal; EMA200 kept in metadata only
+        if last_20 > last_50 and last_close > last_20:
             sig, val = "BUY", last_20
-        elif last_20 < last_50 < last_200 and last_close < last_20:
+        elif last_20 < last_50 and last_close < last_20:
             sig, val = "SELL", last_20
         else:
             sig, val = "HOLD", last_20

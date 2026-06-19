@@ -8,6 +8,7 @@ import httpx
 
 from .personas import PERSONAS
 from .memory import get_memories, store_memory
+from .hypothesis_generator import generate_hypotheses, format_for_simulation
 
 OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://100.94.37.18:11434")
 AGENT_MODEL = os.getenv("OLLAMA_MODEL_AGENT", "qwen3:8b")
@@ -99,6 +100,15 @@ Respond as a JSON array ONLY (no text outside the array):
 ]"""
 
     async with httpx.AsyncClient() as client:
+        # ─── ADHD pre-simulation: generate divergent hypotheses ───────────
+        hypotheses = await generate_hypotheses(client, seed_document, symbol)
+        adhd_block = format_for_simulation(hypotheses)
+        if adhd_block:
+            agent_prompt = agent_prompt.replace(
+                "Market Intelligence:\n---",
+                f"{adhd_block}\nMarket Intelligence:\n---",
+            )
+
         try:
             raw_agents = await _call_ollama(client, AGENT_MODEL, agent_prompt, timeout=300)
             votes = _extract_json_list(raw_agents)
@@ -163,6 +173,7 @@ Synthesize into a final trading signal. Respond as JSON ONLY:
             "total_participants": len(votes),
             "rounds": rounds,
             "session_id": session_id,
+            "adhd_hypotheses": hypotheses,
         },
     }
 

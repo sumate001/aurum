@@ -25,13 +25,13 @@ class StructureAgent(BaseIndicatorAgent):
         position = (last_close - support) / range_size
 
         if position > 0.85:
-            sig = "SELL"
+            sig = "SELL"   # near resistance
         elif position < 0.15:
-            sig = "BUY"
+            sig = "BUY"    # near support
         elif position > 0.5:
-            sig = "BUY"
+            sig = "BUY"    # upper half of range
         else:
-            sig = "HOLD"
+            sig = "SELL"   # lower half of range (bearish territory)
 
         return AgentSignal(
             agent_name=self.name,

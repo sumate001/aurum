@@ -237,7 +237,7 @@ export default function PriceChart({ ohlcv, outcomes, activeSignal, trendHistory
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={chartData} margin={{ top: 12, right: 90, bottom: 8, left: 0 }}>
+      <ComposedChart data={chartData} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
         <defs>
           <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%"  stopColor="#EAB308" stopOpacity={0.18} />
@@ -284,19 +284,19 @@ export default function PriceChart({ ohlcv, outcomes, activeSignal, trendHistory
         {/* Active signal lines (prominent) */}
         {activeSignal?.entry && (
           <ReferenceLine y={activeSignal.entry} stroke="#EAB308" strokeDasharray="6 3" strokeWidth={2}
-            label={{ value: `Entry  ${activeSignal.entry.toFixed(2)}`, position: "insideRight", fill: "#EAB308", fontSize: 11, dx: 6 }} />
+            label={{ value: `Entry ${activeSignal.entry.toFixed(2)}`, position: "insideLeft", fill: "#EAB308", fontSize: 10, dx: 4 }} />
         )}
         {activeSignal?.sl && (
           <ReferenceLine y={activeSignal.sl} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={2}
-            label={{ value: `SL  ${activeSignal.sl.toFixed(2)}`, position: "insideRight", fill: "#ef4444", fontSize: 11, dx: 6 }} />
+            label={{ value: `SL ${activeSignal.sl.toFixed(2)}`, position: "insideLeft", fill: "#ef4444", fontSize: 10, dx: 4 }} />
         )}
         {activeSignal?.tp1 && (
           <ReferenceLine y={activeSignal.tp1} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={2}
-            label={{ value: `TP1  ${activeSignal.tp1.toFixed(2)}`, position: "insideRight", fill: "#22c55e", fontSize: 11, dx: 6 }} />
+            label={{ value: `TP1 ${activeSignal.tp1.toFixed(2)}`, position: "insideLeft", fill: "#22c55e", fontSize: 10, dx: 4 }} />
         )}
         {activeSignal?.tp2 && (
           <ReferenceLine y={activeSignal.tp2} stroke="#16a34a" strokeDasharray="4 4" strokeWidth={1.5}
-            label={{ value: `TP2  ${activeSignal.tp2.toFixed(2)}`, position: "insideRight", fill: "#16a34a", fontSize: 11, dx: 6 }} />
+            label={{ value: `TP2 ${activeSignal.tp2.toFixed(2)}`, position: "insideLeft", fill: "#16a34a", fontSize: 10, dx: 4 }} />
         )}
       </ComposedChart>
     </ResponsiveContainer>

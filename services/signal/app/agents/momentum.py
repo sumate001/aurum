@@ -15,9 +15,9 @@ class MomentumAgent(BaseIndicatorAgent):
         rsi = 100 - (100 / (1 + rs))
 
         val = float(rsi.iloc[-1])
-        if val < 30:
+        if val < 40:
             sig = "BUY"
-        elif val > 70:
+        elif val > 60:
             sig = "SELL"
         else:
             sig = "HOLD"

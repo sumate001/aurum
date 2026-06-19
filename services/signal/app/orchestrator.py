@@ -12,7 +12,14 @@ from .fusion import fuse_signals
 from .entry_quality import check_entry_quality
 
 CONFIDENCE_THRESHOLD  = int(os.getenv("SIGNAL_CONFIDENCE_THRESHOLD", 60))
-ENTRY_QUALITY_MIN     = int(os.getenv("SIGNAL_ENTRY_QUALITY_MIN", 4))   # 0-6, ต้องได้ >= 4
+ENTRY_QUALITY_MIN     = int(os.getenv("SIGNAL_ENTRY_QUALITY_MIN", 4))    # 0-6, ต้องได้ >= 4
+
+# Thresholds สำหรับให้ technical override macro
+# NEUTRAL: technical ต้องได้ score >= นี้ ถึงจะ fire ได้ถึงแม้ macro ไม่มีทิศทาง
+TECH_NEUTRAL_MIN_SCORE = int(os.getenv("SIGNAL_TECH_NEUTRAL_SCORE", 4))
+# CONFLICT: technical ต้องได้ score >= นี้ AND confidence >= นี้ ถึงจะ override macro ที่ขัดแย้ง
+TECH_OVERRIDE_MIN_SCORE = int(os.getenv("SIGNAL_TECH_OVERRIDE_SCORE", 5))
+TECH_OVERRIDE_MIN_CONF  = int(os.getenv("SIGNAL_TECH_OVERRIDE_CONFIDENCE", 75))
 
 AGENTS = [
     TrendAgent(),
@@ -106,34 +113,70 @@ def analyze(symbol: str, macro_signal: dict, ohlcv: dict) -> dict:
     eq = check_entry_quality(ohlcv, macro_dir)
 
     # ── Decide final action ────────────────────────────────────────────────
-    # Conditions to fire a real BUY/SELL:
-    #   1. Macro is directional (not NEUTRAL)
-    #   2. Tech agents agree with macro direction
-    #   3. Confidence >= threshold
-    #   4. Entry quality score >= minimum (price at good entry zone)
+    # Technical เป็น primary gate: ถ้า technical ไม่ชัด หรือ confidence ต่ำ → HOLD เสมอ
+    # Macro เป็น confidence modifier: ไม่มีสิทธิ์ veto เพียงอย่างเดียว
+    #
+    # ตาราง:
+    #   Macro agree    → fire, confidence เต็ม
+    #   Macro neutral  → fire ได้ถ้า entry score >= TECH_NEUTRAL_MIN_SCORE, ลด confidence 12%
+    #   Macro conflict → fire ได้ถ้า score >= TECH_OVERRIDE_MIN_SCORE AND conf >= TECH_OVERRIDE_MIN_CONF
+    #                    ลด confidence 20%, ใส่ warning ใน reasoning
+
     action = "HOLD"
     hold_reason = ""
+    macro_mode = "agree"  # "agree" | "neutral" | "conflict"
 
-    if macro_dir == "NEUTRAL":
-        hold_reason = "Macro neutral — รอทิศทางชัดเจน"
-    elif tech_action == "HOLD":
+    if tech_action == "HOLD":
         hold_reason = f"Technical agents ไม่ชัดเจน ({fusion['technical_consensus']})"
-    elif tech_action != ("BUY" if macro_dir == "BULLISH" else "SELL"):
-        hold_reason = f"Technical ({tech_action}) ขัดแย้งกับ macro ({macro_dir})"
     elif fusion["confidence"] < CONFIDENCE_THRESHOLD:
         hold_reason = f"Confidence {fusion['confidence']}% ต่ำกว่า {CONFIDENCE_THRESHOLD}%"
     elif eq["score"] < ENTRY_QUALITY_MIN:
         hold_reason = f"Entry quality {eq['score']}/6 ต่ำ — {eq['setup_type']}"
     else:
-        action = tech_action  # BUY or SELL
+        expected = "BUY" if macro_dir == "BULLISH" else ("SELL" if macro_dir == "BEARISH" else None)
+
+        if expected == tech_action:
+            macro_mode = "agree"
+            action = tech_action
+
+        elif macro_dir == "NEUTRAL":
+            macro_mode = "neutral"
+            if eq["score"] >= TECH_NEUTRAL_MIN_SCORE:
+                action = tech_action
+                fusion["confidence"] = max(CONFIDENCE_THRESHOLD,
+                                           int(fusion["confidence"] * 0.88))
+            else:
+                hold_reason = (
+                    f"Macro neutral + entry score {eq['score']}/6 < {TECH_NEUTRAL_MIN_SCORE} "
+                    f"— technical ไม่แรงพอ"
+                )
+
+        else:
+            macro_mode = "conflict"
+            if (eq["score"] >= TECH_OVERRIDE_MIN_SCORE
+                    and fusion["confidence"] >= TECH_OVERRIDE_MIN_CONF):
+                action = tech_action
+                fusion["confidence"] = max(CONFIDENCE_THRESHOLD,
+                                           int(fusion["confidence"] * 0.80))
+            else:
+                hold_reason = (
+                    f"Technical ({tech_action}) ขัดแย้ง macro ({macro_dir}) "
+                    f"— score {eq['score']}/6, conf {fusion['confidence']}% "
+                    f"ต้องการ >= {TECH_OVERRIDE_MIN_SCORE}/6 และ >= {TECH_OVERRIDE_MIN_CONF}%"
+                )
 
     levels = _compute_sl_tp(action, entry, atr) if action != "HOLD" else {"sl": None, "tp1": None, "tp2": None}
 
     # ── Reasoning text ─────────────────────────────────────────────────────
     if action != "HOLD":
+        macro_note = {
+            "agree":    f"Macro: {macro_dir} {macro_conf}% (agree)",
+            "neutral":  f"Macro: NEUTRAL — technical override (score {eq['score']}/6, conf -{int((1-0.88)*100)}%)",
+            "conflict": f"Macro: {macro_dir} {macro_conf}% CONFLICT — technical override (score {eq['score']}/6, conf -{int((1-0.80)*100)}%)",
+        }[macro_mode]
         reasoning = (
             f"Setup: {eq['setup_type']} | "
-            f"Macro: {macro_dir} {macro_conf}% | "
+            f"{macro_note} | "
             f"Technical: {fusion['technical_consensus']} | "
             f"Quality: {eq['quality']} ({eq['score']}/6) | "
             + " | ".join(eq["details"])
@@ -166,6 +209,7 @@ def analyze(symbol: str, macro_signal: dict, ohlcv: dict) -> dict:
             {"agent_name": s.agent_name, "signal": s.signal, "value": s.value, "metadata": s.metadata}
             for s in agent_signals
         ],
+        "macro_mode": macro_mode,
         "raw_macro": macro_signal,
         "raw_technical": fusion,
     }

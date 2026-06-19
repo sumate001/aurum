@@ -4,7 +4,8 @@ import pandas as pd
 SYMBOL_MAP = {"GOLD#": "GC=F", "XAUUSD": "GC=F"}
 
 TIMEFRAMES = {
-    "M15": ("5d", "15m"),
+    "M15": ("5d",  "15m"),
+    "M30": ("10d", "30m"),
     "H1":  ("30d", "1h"),
     "H4":  ("90d", "1d"),
 }
